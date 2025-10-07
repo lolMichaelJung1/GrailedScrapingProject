@@ -1,73 +1,118 @@
-import pandas as pd
 import requests
+import pandas as pd
 import time
+import random
+from datetime import datetime
+import os
 
-#
-def scrape_balenciaga_items():
+def scrape_grailed(brand, category, style=None, listing_type="active"):
+    """Scrape Grailed listings for a specific brand, category, and optional style/model."""
+    
     headers = {
-        'Accept': '*/*',
-        'Accept-Language': 'en-US,en;q=0.9,ko-KR;q=0.8,ko;q=0.7',
-        'Connection': 'keep-alive',
-        'Origin': 'https://www.grailed.com',
-        'Referer': 'https://www.grailed.com/',
-        'Sec-Fetch-Dest': 'empty',
-        'Sec-Fetch-Mode': 'cors',
-        'Sec-Fetch-Site': 'cross-site',
-        'User-Agent': 'Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
-        'content-type': 'application/x-www-form-urlencoded',
-        'sec-ch-ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
-        'sec-ch-ua-mobile': '?1',
-        'sec-ch-ua-platform': '"Android"',
-        'x-algolia-api-key': 'bc9ee1c014521ccf312525a4ef324a16',
-        'x-algolia-application-id': 'MNRWEFSS2Q',
+        "Accept": "*/*",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                      "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "content-type": "application/x-www-form-urlencoded",
+        "x-algolia-api-key": "bc9ee1c014521ccf312525a4ef324a16",
+        "x-algolia-application-id": "MNRWEFSS2Q",
     }
 
-    all_items = []
+    index = "Listing_by_heat_production" if listing_type == "active" else "Listing_sold_production"
+    results = []
+    page = 0
 
-    #JSON string to requests API for data
-    # data = '{"requests":[{"indexName":"Listing_by_heat_production","params":"analytics=true&clickAnalytics=true&enableABTest=false&enablePersonalization=false&facetFilters=%5B%5B%22designers.name%3ABalenciaga%22%5D%5D&facets=%5B%22designers.name%22%2C%22category_path%22%2C%22department%22%2C%22category_size%22%2C%22price_i%22%2C%22condition%22%2C%22location%22%2C%22badges%22%2C%22strata%22%5D&filters=&getRankingInfo=true&highlightPostTag=%3C%2Fais-highlight-0000000000%3E&highlightPreTag=%3Cais-highlight-0000000000%3E&hitsPerPage=40&maxValuesPerFacet=100&numericFilters=%5B%22price_i%3E%3D0%22%2C%22price_i%3C%3D1000000%22%5D&page=0&personalizationImpact=0&query=&tagFilters=&userToken=2538683"},{"indexName":"Listing_by_heat_production","params":"analytics=false&clickAnalytics=false&enableABTest=false&enablePersonalization=false&facets=designers.name&filters=&getRankingInfo=true&highlightPostTag=%3C%2Fais-highlight-0000000000%3E&highlightPreTag=%3Cais-highlight-0000000000%3E&hitsPerPage=0&maxValuesPerFacet=100&numericFilters=%5B%22price_i%3E%3D0%22%2C%22price_i%3C%3D1000000%22%5D&page=0&personalizationImpact=0&query=&userToken=2538683"},{"indexName":"Listing_by_heat_production","params":"analytics=false&clickAnalytics=false&enableABTest=false&enablePersonalization=false&facetFilters=%5B%5B%22designers.name%3ABalenciaga%22%5D%5D&facets=price_i&filters=&getRankingInfo=true&highlightPostTag=%3C%2Fais-highlight-0000000000%3E&highlightPreTag=%3Cais-highlight-0000000000%3E&hitsPerPage=0&maxValuesPerFacet=100&page=0&personalizationImpact=0&query=&userToken=2538683"}]}'
-    data = '{"requests":[{"indexName":"Listing_by_heat_production","params":"facetFilters=%5B%5B%22designers.name%3ABalenciaga%22%5D%5D&hitsPerPage=40&page=0"}]}'
+    while True:
+        query_param = f"&query={requests.utils.quote(style)}" if style else ""
+        payload = {
+            "requests": [{
+                "indexName": index,
+                "params": (
+                    "analytics=true&clickAnalytics=true&enableABTest=false"
+                    f"&facetFilters=%5B%5B%22designers.name%3A{brand}%22%2C%22category_path%3A{category}%22%5D%5D"
+                    f"{query_param}&hitsPerPage=40&page={page}"
+                )
+            }]
+        }
 
-    #Sends POST request to Grailed's Algolia API
-    response = requests.post(
-        'https://mnrwefss2q-dsn.algolia.net/1/indexes/*/queries?x-algolia-agent=Algolia%20for%20JavaScript%20(4.14.3)%3B%20Browser%3B%20JS%20Helper%20(3.11.3)%3B%20react%20(18.2.0)%3B%20react-instantsearch%20(6.39.1)',
-        headers=headers,
-        data=data,
-    )
+        response = requests.post(
+            "https://mnrwefss2q-dsn.algolia.net/1/indexes/*/queries",
+            headers=headers,
+            json=payload
+        )
 
-    #if the request was successful, convert the API response into a Python dictionary
-    if response.status_code == 200:
-        # Parse the JSON response
-        result = response.json()
-        # Extract relevant data from the response
-        hits = result['results'][0]['hits']
-        # Return the scraped data
-        return hits
+        if response.status_code != 200:
+            print(f"Request failed on page {page}: {response.status_code}")
+            break
+
+        data = response.json()
+        hits = data["results"][0].get("hits", [])
+
+        if not hits:
+            print(f"No more {listing_type} listings found for {brand} {category} ({style}) at page {page}.")
+            break
+
+        print(f"Page {page}: {len(hits)} {listing_type} listings scraped for {brand} {category} ({style})")
+
+        for item in hits:
+            listing = {
+                "status": listing_type,
+                "brand": brand,
+                "category": category,
+                "style": style,
+                "title": item.get("title"),
+                "price": item.get("price_i"),
+                "currency": "USD",
+                "size": item.get("size"),
+                "condition": item.get("condition"),
+                "color": item.get("color"),
+                "url": f"https://www.grailed.com/listings/{item.get('id')}",
+                "image": item.get("media", {}).get("thumb_url"),
+                "location": (
+                    item["location"].get("city") if isinstance(item.get("location"), dict)
+                    else item.get("location")
+                ),
+                "date_scraped": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+            results.append(listing)
+
+        page += 1
+        time.sleep(random.uniform(1.2, 2.3))
+
+    return results
+
+if __name__ == "__main__":
+    #Brand, category, style
+    brands = {
+        "Balenciaga": {"category": "Footwear", "styles": ["3XLS", "Venom Boots"]},
+        "Dior Homme": {"category": "Jeans", "styles": ["Strip", "strip"]},
+        "Enfants Riches Deprimes": {"category": "T-Shirts", "styles": None}  # None scrapes all
+    }
+
+    all_listings = []
+
+    #Loop through each brand, category, and style
+    for brand, info in brands.items():
+        category = info["category"]
+        styles = info.get("styles")
+        if styles:
+            for style in styles:
+                all_listings.extend(scrape_grailed(brand, category, style, "active"))
+                all_listings.extend(scrape_grailed(brand, category, style, "sold"))
+        else:
+            all_listings.extend(scrape_grailed(brand, category, None, "active"))
+            all_listings.extend(scrape_grailed(brand, category, None, "sold"))
+
+    #Save to csv
+    filename = "grailed_listings.csv"
+    if all_listings:
+        df = pd.DataFrame(all_listings)
+        if os.path.exists(filename):
+            existing_df = pd.read_csv(filename)
+            combined_df = pd.concat([existing_df, df], ignore_index=True)
+            combined_df.to_csv(filename, index=False, encoding="utf-8-sig")
+            print(f"\nAppended {len(df)} new listings to existing '{filename}' file.")
+        else:
+            df.to_csv(filename, index=False, encoding="utf-8-sig")
+            print(f"\nCreated '{filename}' and saved {len(df)} listings.")
     else:
-        print("Failed to scrape data. Status code:", response.status_code)
-        return None
-
-# Scrape Balenciaga items
-balenciaga_items = scrape_balenciaga_items()
-
-# Convert scraped data to pandas DataFrame
-if balenciaga_items:
-    cleaned_data = []
-    for item in balenciaga_items:
-       cleaned_data.append({
-            "title": item.get("title"),
-            "price": item.get("price_i"),
-            "currency" : "USD",
-            "size": item.get("size"),
-            "condition": item.get("condition"),
-            "color": item.get("color"),
-            "designer": item.get("designer_name"),
-            "url": f"https://www.grailed.com/listings/{item.get('id')}",
-            "image": item.get("media", {}).get("thumb_url"),
-        })
-    df = pd.DataFrame(cleaned_data)
-    # Print DataFrame
-    print(df.head())
-    df.to_csv("balenciaga_items.csv", index=False, encoding="utf-8")
-else:
-    print("No data scraped for Balenciaga items.")
+        print("No data collected.")
